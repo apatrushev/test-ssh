@@ -6,9 +6,12 @@ use anyhow::Result;
 use ssh2::Session;
 use tokio::{io::split, join, net::TcpStream};
 
+use crate::socks5_server::create_socks5_server;
+
 #[tokio::main]
 async fn main() {
     println!("Hello, world!");
+    create_socks5_server().await.unwrap();
 }
 
 #[tokio::test]
