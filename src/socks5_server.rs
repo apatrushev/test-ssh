@@ -1,8 +1,12 @@
+use std::{net::Ipv4Addr, str::FromStr};
+
 use anyhow::{bail, Context, Result};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{split, AsyncReadExt, AsyncWriteExt, BufWriter},
     net::{TcpListener, TcpStream},
 };
+
+#[allow(dead_code)]
 
 pub async fn create_socks5_server() -> Result<bool> {
     let listener = TcpListener::bind("127.0.0.1:3894").await?;
@@ -17,56 +21,52 @@ pub async fn create_socks5_server() -> Result<bool> {
 }
 
 pub async fn handle_socks5_server_connection(stream: TcpStream) -> Result<bool, anyhow::Error> {
-    let mut stream = stream;
+    let (mut rh, wh) = split(stream);
+    let mut wh = BufWriter::new(wh);
 
-    println!("new connection: {:?}", &stream.peer_addr()?);
     let mut buf = [0u8; 4];
-    stream.read(&mut buf).await?;
-    println!("{:?}", &buf);
-    // stream
-    //     .read_exact(&mut buf)
-    //     .await
-    //     .with_context(|| "failed to read from stream")?;
-    // stream
-    //     .write_all(&[0x05, 0x00])
-    //     .await
-    //     .with_context(|| "failed to write to stream")?;
+    let len = rh.read(&mut buf).await?;
+    wh.write_all(&[0x05, 0x00]).await?;
+    wh.flush().await?;
+    let mut buf = [0u8; 4];
+    let len = rh.read_exact(&mut buf).await?;
 
-    // let mut buf = [0u8; 4];
-    // println!("{:?}", &buf);
-    // stream
-    //     .read(&mut buf)
-    //     .await
-    //     .context("failed to read")?;
-
-    // if buf[0] != 0x05 {
-    //     bail!("invalid version received");
-    // } else if buf[1] != 0x01 {
-    //     bail!("invalid command received");
-    // }
-
-    // let atyp = buf[3];
+    if buf[0] != 0x05 {
+        bail!("invalid version received");
+    } else if buf[1] != 0x01 {
+        bail!("unsupported command received");
+    }
 
     match buf[3] {
         0x01 => {
-            // ipv4 address
-            println!("parsing ipv4 address");
+            println!("ipv4 requested");
         }
         0x03 => {
-            println!("parsing domain name");
-            // domain name
+            println!("domain name requested");
+            let mut buf = [0u8; 32];
+            let len = rh.read(&mut buf).await?;
+            let domain_name = &buf[1..len - 2];
+            let port = &buf[len - 2..];
+            let bb = ((port[0] as u16) << 8) | (port[1] as u16);
+            let addr = format!("{}:{}", String::from_utf8_lossy(domain_name), &bb);
+            wh.write(&[0x05, 0x00, 0x00, 0x03]).await?;
+            wh.write(&buf[0..len]).await?;
+            wh.flush().await?;
+
+            let mut endpoint = TcpStream::connect(&addr)
+                .await
+                .context("failed to connect to endpoint")?;
+            let mut stream = rh.unsplit(wh.into_inner());
+            tokio::io::copy_bidirectional(&mut endpoint, &mut stream)
+                .await
+                .context("failed to copy bidirectional")?;
         }
         0x04 => {
-            // ipv6 address
-            println!("parsing ipv6 address");
+            println!("ipv6 requested");
         }
-        _ => bail!("invalid address type received."),
+        _ => bail!("unsupported address type received"),
     }
 
-    let mut buf = [0u8; 32];
-    stream.read(&mut buf).await?;
-
-    println!("{:?}", &buf);
     Ok(true)
 }
 

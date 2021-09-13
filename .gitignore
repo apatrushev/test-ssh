@@ -1,3 +1,7 @@
 /target
 
 Cargo.lock
+.idea/.gitignore
+.idea/modules.xml
+.idea/test-ssh.iml
+.idea/vcs.xml
