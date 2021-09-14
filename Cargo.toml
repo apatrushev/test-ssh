@@ -10,3 +10,6 @@ thrussh-keys = "0.21.0"
 futures = "0.3.17"
 tokio = {version = "1.11.0", features = ["full"]}
 trust-dns-resolver = "0.20.3"
+pretty_env_logger = "0.4.0"
+structopt = "0.3.23"
+log = "0.4.14"

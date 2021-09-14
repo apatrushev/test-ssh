@@ -1,16 +1,27 @@
 mod socks5_server;
 use crate::socks5_server::create_socks5_server;
 
-#[tokio::main]
-async fn main() {
-    println!("Hello, world!");
-    create_socks5_server().await.unwrap();
+use structopt::StructOpt;
+
+#[derive(StructOpt, Debug)]
+#[structopt(name = "basic")]
+pub(crate) struct Opt {
+    /// Listen port
+    #[structopt(short, long, default_value = "localhost:22")]
+    pub(crate) address: String,
+
+    /// User
+    #[structopt(short, long, default_value = "test")]
+    pub(crate) username: String,
+
+    /// Password
+    #[structopt(short, long, default_value = "")]
+    pub(crate) password: String,
 }
 
-#[tokio::test]
-async fn test_connection() {
-    // let e = test_ssh_connection().await;
-    // if e.is_err() {
-    //     println!("{:#}", e.unwrap_err());
-    // }
+#[tokio::main]
+async fn main() {
+    pretty_env_logger::init();
+    let opt = Opt::from_args();
+    create_socks5_server(&opt.address, &opt.username, &opt.password).await.unwrap();
 }

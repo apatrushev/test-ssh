@@ -13,6 +13,7 @@ use trust_dns_resolver::{
     config::{ResolverConfig, ResolverOpts},
     TokioAsyncResolver,
 };
+use log::info;
 
 #[allow(dead_code)]
 pub struct Client {}
@@ -28,19 +29,19 @@ impl client::Handler for Client {
         futures::future::ready(Ok((self, session)))
     }
     fn check_server_key(self, server_public_key: &key::PublicKey) -> Self::FutureBool {
-        println!("check_server_key: {:?}", server_public_key);
+        info!("check_server_key: {:?}", server_public_key);
         self.finished_bool(true)
     }
 }
 
-pub async fn create_socks5_server() -> Result<bool> {
+pub async fn create_socks5_server(address: &str, username: &str, password: &str) -> Result<bool> {
     let config = thrussh::client::Config::default();
     let config = Arc::new(config);
     let sh = Client {};
 
-    let mut session = thrussh::client::connect(config, "40.91.208.240:22", sh).await?;
+    let mut session = thrussh::client::connect(config, address, sh).await?;
     let _ = session
-        .authenticate_password("work", "wug2DwxqfHR45fMqa9KmQc9A")
+        .authenticate_password(username, password)
         .await?;
 
     let session = Arc::new(Mutex::new(session));
@@ -56,7 +57,7 @@ pub async fn create_socks5_server() -> Result<bool> {
         tokio::spawn(async move {
             let _ = handle_socks5_server_connection(stream, &resolver, &session)
                 .await
-                .map_err(|e| println!("err: {:?}", e));
+                .map_err(|e| info!("err: {:?}", e));
         });
     }
 }
@@ -84,7 +85,7 @@ pub async fn handle_socks5_server_connection(
 
     match buf[3] {
         0x01 => {
-            println!("ipv4 requested");
+            info!("ipv4 requested");
         }
         0x03 => {
             let mut buf = [0u8; 128];
@@ -110,7 +111,7 @@ pub async fn handle_socks5_server_connection(
             wh.write(&buf[0..len]).await?;
             wh.flush().await?;
 
-            println!("connecting to {}", &i);
+            info!("connecting to {}", &i);
             let chan = ssh_session
                 .lock()
                 .await
@@ -126,10 +127,10 @@ pub async fn handle_socks5_server_connection(
                     let s = rh.read(&mut buf).await;
                     if s.is_ok() {
                         let size = s.unwrap();
-                        println!("received data from client {:?}", &buf[0..size]);
+                        info!("received data from client {:?}", &buf[0..size]);
                         chan.lock().await.data(&buf[0..size]).await.unwrap();
                     } else {
-                        println!("error occured: {:?}", s.unwrap_err());
+                        info!("error occured: {:?}", s.unwrap_err());
                         chan.lock()
                             .await
                             .cancel_tcpip_forward(false, ip, bb as u32)
@@ -143,7 +144,7 @@ pub async fn handle_socks5_server_connection(
                 while let Some(msg) = chan2.lock().await.wait().await {
                     match msg {
                         thrussh::ChannelMsg::Data { ref data } => {
-                            println!("received data {:?}", &data);
+                            info!("received data {:?}", &data);
                             wh.write(data).await.unwrap();
                             wh.flush().await.unwrap();
                         }
@@ -159,11 +160,11 @@ pub async fn handle_socks5_server_connection(
                     }
                 }
             });
-            println!("running copy tasks");
+            info!("running copy tasks");
             let _z = join!(h, h2);
         }
         0x04 => {
-            println!("ipv6 requested");
+            info!("ipv6 requested");
         }
         _ => bail!("unsupported address type received"),
     }
