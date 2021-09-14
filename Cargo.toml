@@ -8,5 +8,6 @@ anyhow = "1.0.43"
 thrussh = "0.33.5"
 thrussh-keys = "0.21.0"
 futures = "0.3.17"
+ssh2 = "0.9.1"
 tokio = {version = "1.11.0", features = ["full"]}
 trust-dns-resolver = "0.20.3"
