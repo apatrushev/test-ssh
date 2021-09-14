@@ -112,56 +112,51 @@ pub async fn handle_socks5_server_connection(
             wh.flush().await?;
 
             info!("connecting to {}", &i);
-            let chan = ssh_session
+            let mut chan = ssh_session
                 .lock()
                 .await
                 .channel_open_direct_tcpip(i.to_string(), bb as u32, "127.0.0.1", 80)
                 .await?;
 
-            let chan = Arc::new(Mutex::new(chan));
-            let chan = chan.clone();
-            let chan2 = chan.clone();
-            let h = tokio::task::spawn(async move {
-                let mut buf = [0u8; 16384];
-                loop {
-                    let s = rh.read(&mut buf).await;
-                    if s.is_ok() {
-                        let size = s.unwrap();
-                        info!("received data from client {:?}", &buf[0..size]);
-                        chan.lock().await.data(&buf[0..size]).await.unwrap();
-                    } else {
-                        info!("error occured: {:?}", s.unwrap_err());
-                        chan.lock()
-                            .await
-                            .cancel_tcpip_forward(false, ip, bb as u32)
-                            .await
-                            .unwrap();
-                        return;
-                    }
-                }
-            });
-            let h2 = tokio::task::spawn(async move {
-                while let Some(msg) = chan2.lock().await.wait().await {
-                    match msg {
-                        thrussh::ChannelMsg::Data { ref data } => {
-                            info!("received data {:?}", &data);
-                            wh.write(data).await.unwrap();
-                            wh.flush().await.unwrap();
+            let mut buf = [0u8; 16384];
+            loop {
+                tokio::select! {
+                    s = rh.read(&mut buf) => {
+                        if s.is_ok() {
+                            let size = s.unwrap();
+                            info!("received data from client {:?}", &buf[0..size]);
+                            if size == 0 {
+                                break
+                            };
+                            chan.data(&buf[0..size]).await.unwrap();
+                        } else {
+                            info!("error occured: {:?}", s.unwrap_err());
+                            chan.cancel_tcpip_forward(false, ip, bb as u32)
+                                .await
+                                .unwrap();
+                            break;
                         }
-                        thrussh::ChannelMsg::ExitSignal {
-                            signal_name: _,
-                            core_dumped: _,
-                            error_message: _,
-                            lang_tag: _,
-                        } => {
-                            wh.shutdown().await.unwrap();
+                    },
+                    Some(msg) = chan.wait() => {
+                        match msg {
+                            thrussh::ChannelMsg::Data { ref data } => {
+                                info!("received data {:?}", &data);
+                                wh.write(data).await.unwrap();
+                                wh.flush().await.unwrap();
+                            }
+                            thrussh::ChannelMsg::ExitSignal {
+                                signal_name: _,
+                                core_dumped: _,
+                                error_message: _,
+                                lang_tag: _,
+                            } => {
+                                wh.shutdown().await.unwrap();
+                            }
+                            _ => {}
                         }
-                        _ => {}
-                    }
+                    },
                 }
-            });
-            info!("running copy tasks");
-            let _z = join!(h, h2);
+            }
         }
         0x04 => {
             info!("ipv6 requested");
